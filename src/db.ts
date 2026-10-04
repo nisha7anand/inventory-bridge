@@ -2,17 +2,25 @@ import { Pool } from 'pg';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
-
+ 
 dotenv.config();
-
-export const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: Number(process.env.PGPORT) || 5432,
-  user: process.env.PGUSER || 'postgres',
-  password: process.env.PGPASSWORD || 'postgres',
-  database: process.env.PGDATABASE || 'inventory_bridge',
-});
-
+ 
+// Hosted Postgres providers (Neon, Render, Railway, Supabase) give you one
+// connection string via DATABASE_URL and require SSL. Locally, we fall
+// back to the discrete PGHOST/PGUSER/etc vars from .env instead.
+export const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    })
+  : new Pool({
+      host: process.env.PGHOST || 'localhost',
+      port: Number(process.env.PGPORT) || 5432,
+      user: process.env.PGUSER || 'postgres',
+      password: process.env.PGPASSWORD || 'postgres',
+      database: process.env.PGDATABASE || 'inventory_bridge',
+    });
+ 
 const MOCK_PRODUCTS = [
   { name: 'Classic Cotton T-Shirt', sku: 'TSHIRT-001', qty: 50 },
   { name: 'Insulated Steel Water Bottle', sku: 'BOTTLE-002', qty: 40 },
@@ -20,7 +28,7 @@ const MOCK_PRODUCTS = [
   { name: 'Canvas Tote Bag', sku: 'TOTE-004', qty: 60 },
   { name: 'Scented Soy Candle', sku: 'CANDLE-005', qty: 25 },
 ];
-
+ 
 /**
  * Runs schema.sql against the DB, then seeds 5 mock products
  * (only if the products table is currently empty).
@@ -28,16 +36,16 @@ const MOCK_PRODUCTS = [
 export async function initializeDatabase(): Promise<void> {
   const schemaPath = path.join(__dirname, '..', 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
-
+ 
   await pool.query(schemaSql);
   console.log('[db] Schema ensured (products, sale_events).');
-
+ 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM products');
   if (rows[0].count > 0) {
     console.log(`[db] Products table already has ${rows[0].count} rows — skipping seed.`);
     return;
   }
-
+ 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
